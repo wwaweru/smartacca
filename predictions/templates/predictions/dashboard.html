@@ -1,0 +1,428 @@
+{% extends 'predictions/base.html' %}
+
+{% block title %}Today's AI-Verified Accumulator - SmartAcca{% endblock %}
+
+{% block content %}
+<style>
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  [x-cloak]{ display:none !important; }
+</style>
+
+<!-- Header with Filters -->
+<div class="mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
+        Predictions
+      </h1>
+      {% if latest_update %}
+      <p class="mt-1 text-sm text-muted-foreground">Last updated: {{ latest_update|date:"F d, Y H:i" }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Filters -->
+    <div class="flex gap-2">
+      <select onchange="window.location.href='?date='+this.value+'&status={{ status_filter }}'"
+              class="px-3 py-2 bg-card border border-border rounded-md text-sm text-foreground">
+        <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+        <option value="yesterday" {% if date_filter == 'yesterday' %}selected{% endif %}>Yesterday</option>
+        <option value="week" {% if date_filter == 'week' %}selected{% endif %}>Last 7 Days</option>
+        <option value="all" {% if date_filter == 'all' %}selected{% endif %}>All Predictions</option>
+      </select>
+
+      <select onchange="window.location.href='?date={{ date_filter }}&status='+this.value"
+              class="px-3 py-2 bg-card border border-border rounded-md text-sm text-foreground">
+        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+        <option value="upcoming" {% if status_filter == 'upcoming' %}selected{% endif %}>Upcoming</option>
+        <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+        <option value="won" {% if status_filter == 'won' %}selected{% endif %}>Won</option>
+        <option value="lost" {% if status_filter == 'lost' %}selected{% endif %}>Lost</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+  <!-- Total Matches -->
+  <div class="bg-card border border-border rounded-lg p-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Total</span>
+      <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+    </div>
+    <div class="text-2xl font-bold text-foreground">{{ total_matches }}</div>
+  </div>
+
+  <!-- Upcoming -->
+  <div class="bg-card border border-border rounded-lg p-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Upcoming</span>
+      <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <div class="text-2xl font-bold text-foreground">{{ upcoming_matches }}</div>
+  </div>
+
+  <!-- Completed -->
+  <div class="bg-card border border-border rounded-lg p-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Completed</span>
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+    </div>
+    <div class="text-2xl font-bold text-foreground">{{ completed_matches }}</div>
+  </div>
+
+  <!-- Won -->
+  <div class="bg-card border border-border rounded-lg p-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Won</span>
+      <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <div class="text-2xl font-bold text-primary">{{ correct_predictions }}</div>
+  </div>
+
+  <!-- Accuracy -->
+  <div class="bg-card border border-border rounded-lg p-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Accuracy</span>
+      <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    </div>
+    <div class="text-2xl font-bold {% if accuracy >= 60 %}text-primary{% elif accuracy >= 40 %}text-accent{% else %}text-red-500{% endif %}">
+      {{ accuracy|floatformat:0 }}%
+    </div>
+  </div>
+</div>
+
+<!-- Matches Table -->
+{% if acca_matches %}
+  <div class="bg-card border border-border rounded-lg overflow-hidden">
+    <!-- Desktop Table -->
+    <div class="hidden md:block overflow-x-auto max-h-[70vh] overflow-y-auto no-scrollbar">
+      <table class="w-full">
+        <thead class="bg-secondary border-b border-border sticky top-0 z-10">
+          <tr>
+            <th class="text-left py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground w-8">#</th>
+            <th class="text-left py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Match</th>
+            <th class="text-left py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">League</th>
+            <th class="text-left py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Time</th>
+            <th class="text-left py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Pick</th>
+            <th class="text-center py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Confidence</th>
+            <th class="text-center py-4 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground w-16">Details</th>
+          </tr>
+        </thead>
+        {% for match in acca_matches %}
+          <tbody x-data="{ expanded: false }" class="divide-y divide-border border-b border-border">
+          <tr class="hover:bg-secondary/30 transition-colors">
+            <!-- Row Number -->
+            <td class="py-4 px-4 text-sm font-medium text-muted-foreground">{{ forloop.counter }}</td>
+
+            <!-- Match -->
+            <td class="py-4 px-4">
+              <div class="font-semibold text-foreground">{{ match.home_team }} vs {{ match.away_team }}</div>
+            </td>
+
+            <!-- League -->
+            <td class="py-4 px-4 text-sm text-muted-foreground">{{ match.league_name }}</td>
+
+            <!-- Time -->
+            <td class="py-4 px-4 text-sm text-muted-foreground">{{ match.match_date|date:"M d, H:i" }}</td>
+
+            <!-- AI Pick -->
+            <td class="py-4 px-4">
+              <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md">
+                <svg class="w-3.5 h-3.5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-sm font-medium text-foreground">{{ match.suggested_bet|default:"N/A" }}</span>
+              </div>
+            </td>
+
+            <!-- Confidence -->
+            <td class="py-4 px-4 text-center">
+              {% if match.confidence_score >= 8.0 %}
+              <span class="inline-flex items-center justify-center bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm font-bold min-w-[60px]">{{ match.confidence_score|floatformat:1 }}</span>
+              {% elif match.confidence_score >= 6.0 %}
+              <span class="inline-flex items-center justify-center bg-accent text-accent-foreground px-3 py-1 rounded-full text-sm font-bold min-w-[60px]">{{ match.confidence_score|floatformat:1 }}</span>
+              {% else %}
+              <span class="inline-flex items-center justify-center bg-muted text-muted-foreground px-3 py-1 rounded-full text-sm font-bold min-w-[60px]">{{ match.confidence_score|floatformat:1 }}</span>
+              {% endif %}
+            </td>
+
+            <!-- Expand Button -->
+            <td class="py-4 px-4 text-center">
+              <button @click="expanded = !expanded"
+                      class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary transition-colors"
+                      :aria-expanded="expanded"
+                      aria-label="Toggle AI analysis">
+                <svg class="w-5 h-5 text-muted-foreground transition-transform duration-200"
+                     :class="{ 'rotate-180': expanded }"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+            </td>
+          </tr>
+
+          <!-- Expandable Row -->
+          <tr x-show="expanded"
+              x-collapse
+              x-cloak
+              class="bg-secondary/50">
+            <td colspan="7" class="px-4 py-0">
+              <div class="py-6 px-4">
+                <div class="max-w-4xl">
+                  <!-- AI Analysis -->
+                  <div class="mb-6">
+                    <div class="flex items-start gap-3 mb-3">
+                      <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                      </svg>
+                      <div class="flex-1">
+                        <h4 class="text-sm font-semibold uppercase tracking-wide text-accent mb-2">AI Justification</h4>
+                        <p class="text-sm text-foreground leading-relaxed">{{ match.gemini_analysis }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Tipster Picks (if available) -->
+                  {% if match.tipster_1_pick or match.tipster_2_pick or match.tipster_3_pick %}
+                  <div class="pt-4 border-t border-border">
+                    <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Tipster Picks</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {% if match.tipster_1_pick %}
+                      <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                        <svg class="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span>{{ match.tipster_1_pick }}</span>
+                      </div>
+                      {% endif %}
+                      {% if match.tipster_2_pick %}
+                      <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                        <svg class="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span>{{ match.tipster_2_pick }}</span>
+                      </div>
+                      {% endif %}
+                      {% if match.tipster_3_pick %}
+                      <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                        <svg class="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span>{{ match.tipster_3_pick }}</span>
+                      </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+          </tr>
+          </tbody>
+          {% endfor %}
+      </table>
+    </div>
+
+    <!-- Mobile Cards (Responsive) -->
+    <div class="md:hidden divide-y divide-border">
+      {% for match in acca_matches %}
+      <div x-data="{ expanded: false }" class="p-4">
+        <!-- Mobile Card Header -->
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold text-muted-foreground">#{{ forloop.counter }}</span>
+              {% if match.confidence_score >= 8.0 %}
+              <span class="bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs font-bold">{{ match.confidence_score|floatformat:1 }}</span>
+              {% elif match.confidence_score >= 6.0 %}
+              <span class="bg-accent text-accent-foreground px-2 py-0.5 rounded-full text-xs font-bold">{{ match.confidence_score|floatformat:1 }}</span>
+              {% else %}
+              <span class="bg-muted text-muted-foreground px-2 py-0.5 rounded-full text-xs font-bold">{{ match.confidence_score|floatformat:1 }}</span>
+              {% endif %}
+            </div>
+            <h3 class="font-semibold text-foreground text-base mb-1">{{ match.home_team }} vs {{ match.away_team }}</h3>
+            <p class="text-xs text-muted-foreground">{{ match.league_name }} · {{ match.match_date|date:"M d, H:i" }}</p>
+          </div>
+          <button @click="expanded = !expanded"
+                  class="flex-shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-md hover:bg-secondary transition-colors"
+                  :aria-expanded="expanded">
+            <svg class="w-5 h-5 text-muted-foreground transition-transform duration-200"
+                 :class="{ 'rotate-180': expanded }"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- AI Pick -->
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md mb-3">
+          <svg class="w-3.5 h-3.5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span class="text-sm font-medium text-foreground">{{ match.suggested_bet|default:"N/A" }}</span>
+        </div>
+
+        <!-- Expandable Analysis -->
+        <div x-show="expanded" x-collapse x-cloak class="mt-4 pt-4 border-t border-border">
+          <div class="mb-4">
+            <div class="flex items-start gap-2 mb-2">
+              <svg class="w-4 h-4 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+              </svg>
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-accent">AI Justification</h4>
+            </div>
+            <p class="text-sm text-foreground leading-relaxed">{{ match.gemini_analysis }}</p>
+          </div>
+
+          {% if match.tipster_1_pick or match.tipster_2_pick or match.tipster_3_pick %}
+          <div class="pt-3 border-t border-border">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Tipster Picks</h4>
+            <div class="space-y-2">
+              {% if match.tipster_1_pick %}
+              <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                <svg class="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>{{ match.tipster_1_pick }}</span>
+              </div>
+              {% endif %}
+              {% if match.tipster_2_pick %}
+              <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                <svg class="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>{{ match.tipster_2_pick }}</span>
+              </div>
+              {% endif %}
+              {% if match.tipster_3_pick %}
+              <div class="flex items-start gap-2 text-sm text-muted-foreground">
+                <svg class="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>{{ match.tipster_3_pick }}</span>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if acca_matches.paginator.num_pages > 1 %}
+    <div class="px-4 py-4 bg-card border-t border-border flex items-center justify-between">
+      <div class="flex-1 flex justify-between sm:hidden">
+        {% if acca_matches.has_previous %}
+        <a href="?page={{ acca_matches.previous_page_number }}&date={{ date_filter }}&status={{ status_filter }}" class="relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-foreground bg-secondary hover:bg-secondary/80">
+          Previous
+        </a>
+        {% else %}
+        <span class="relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-muted-foreground bg-secondary cursor-not-allowed">Previous</span>
+        {% endif %}
+        
+        {% if acca_matches.has_next %}
+        <a href="?page={{ acca_matches.next_page_number }}&date={{ date_filter }}&status={{ status_filter }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-foreground bg-secondary hover:bg-secondary/80">
+          Next
+        </a>
+        {% else %}
+        <span class="ml-3 relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-muted-foreground bg-secondary cursor-not-allowed">Next</span>
+        {% endif %}
+      </div>
+      <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-muted-foreground">
+            Showing
+            <span class="font-medium">{{ acca_matches.start_index }}</span>
+            to
+            <span class="font-medium">{{ acca_matches.end_index }}</span>
+            of
+            <span class="font-medium">{{ acca_matches.paginator.count }}</span>
+            results
+          </p>
+        </div>
+        <div>
+          <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+            {% if acca_matches.has_previous %}
+            <a href="?page={{ acca_matches.previous_page_number }}&date={{ date_filter }}&status={{ status_filter }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-border bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80">
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+            </a>
+            {% endif %}
+
+            {% for i in acca_matches.paginator.page_range %}
+              {% if acca_matches.number == i %}
+              <span aria-current="page" class="z-10 bg-primary/20 border-primary text-primary relative inline-flex items-center px-4 py-2 border text-sm font-medium">{{ i }}</span>
+              {% elif i > acca_matches.number|add:'-3' and i < acca_matches.number|add:'3' %}
+              <a href="?page={{ i }}&date={{ date_filter }}&status={{ status_filter }}" class="bg-secondary border-border text-muted-foreground hover:bg-secondary/80 relative inline-flex items-center px-4 py-2 border text-sm font-medium">{{ i }}</a>
+              {% endif %}
+            {% endfor %}
+
+            {% if acca_matches.has_next %}
+            <a href="?page={{ acca_matches.next_page_number }}&date={{ date_filter }}&status={{ status_filter }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-border bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80">
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+              </svg>
+            </a>
+            {% endif %}
+          </nav>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Disclaimer -->
+  <div class="mt-8 bg-card border border-border rounded-lg p-6">
+    <div class="flex items-start gap-3">
+      <svg class="w-6 h-6 text-accent flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <div>
+        <h3 class="font-semibold text-foreground mb-2">Responsible Betting</h3>
+        <p class="text-sm text-muted-foreground leading-relaxed">
+          SmartAcca provides AI-assisted predictions for <strong>entertainment purposes only</strong>.
+          Please gamble responsibly and never bet more than you can afford to lose.
+          Past performance does not guarantee future results.
+        </p>
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <!-- No Matches Available -->
+  <div class="bg-card border border-border rounded-lg p-12">
+    <div class="text-center">
+      <svg class="mx-auto h-12 w-12 text-muted-foreground mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+      <h3 class="text-xl font-semibold text-foreground mb-2">No Accumulator Generated Yet</h3>
+      <p class="text-muted-foreground mb-6">
+        Run the management command to generate today's AI-verified accumulator picks.
+      </p>
+      <div class="bg-secondary rounded-lg p-4 inline-block border border-border">
+        <code class="text-primary font-mono text-sm">
+          python manage.py generate_daily_acca
+        </code>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

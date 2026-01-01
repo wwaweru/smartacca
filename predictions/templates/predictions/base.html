@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" class="dark overflow-x-hidden">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SmartAcca - AI-Verified Football Accumulators{% endblock %}</title>
+
+    <!-- Google Fonts - PT Sans -->
+    <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(227, 27%, 14%)',
+                        foreground: 'hsl(0, 0%, 98%)',
+                        card: 'hsl(227, 27%, 18%)',
+                        'card-foreground': 'hsl(0, 0%, 98%)',
+                        border: 'hsl(227, 27%, 22%)',
+                        primary: 'hsl(120, 50%, 60%)',
+                        'primary-foreground': 'hsl(227, 27%, 14%)',
+                        secondary: 'hsl(227, 27%, 20%)',
+                        'secondary-foreground': 'hsl(0, 0%, 98%)',
+                        accent: 'hsl(39, 86%, 62%)',
+                        'accent-foreground': 'hsl(227, 27%, 14%)',
+                        muted: 'hsl(227, 27%, 25%)',
+                        'muted-foreground': 'hsl(0, 0%, 65%)'
+                    },
+                    fontFamily: {
+                        body: ['"PT Sans"', 'sans-serif'],
+                        headline: ['"PT Sans"', 'serif'],
+                        sans: ['"PT Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Alpine.js with Collapse Plugin -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.13.5/dist/cdn.min.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-background text-foreground min-h-screen font-sans overflow-x-hidden">
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div class="container mx-auto px-4 flex h-16 items-center justify-between max-w-[1008px]">
+            <!-- Logo -->
+            <a href="/" class="flex items-center space-x-2" aria-label="SmartAcca Home">
+                <span class="font-headline font-bold text-xl text-primary">SmartAcca</span>
+                <span class="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full">AI</span>
+            </a>
+
+            <!-- Desktop Navigation Links -->
+            <nav class="hidden md:flex items-center space-x-6">
+                <a href="/"
+                   class="text-sm font-medium transition-colors hover:text-primary {% if request.path == '/' %}text-primary{% else %}text-muted-foreground{% endif %}">
+                    Dashboard
+                </a>
+                <a href="{% url 'predictions:post_mortem' %}"
+                   class="text-sm font-medium transition-colors hover:text-primary {% if 'post-mortem' in request.path %}text-primary{% else %}text-muted-foreground{% endif %}">
+                    Post-Mortem
+                </a>
+                <a href="/admin/"
+                   class="text-sm font-medium transition-colors hover:text-primary text-muted-foreground">
+                    Admin
+                </a>
+            </nav>
+
+            <!-- Mobile Menu Button -->
+            <button x-data @click="$dispatch('toggle-mobile-menu')"
+                    class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    aria-label="Open navigation menu">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Mobile Menu -->
+        <div x-data="{ open: false }"
+             @toggle-mobile-menu.window="open = !open"
+             x-show="open"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             class="md:hidden border-t border-border bg-background">
+            <nav class="grid gap-4 text-lg font-medium mt-8 px-6 pb-6">
+                <a href="/"
+                   class="text-lg font-medium transition-colors hover:text-primary {% if request.path == '/' %}text-primary{% else %}text-muted-foreground{% endif %}"
+                   @click="$dispatch('toggle-mobile-menu')">
+                    Dashboard
+                </a>
+                <a href="{% url 'predictions:post_mortem' %}"
+                   class="text-lg font-medium transition-colors hover:text-primary {% if 'post-mortem' in request.path %}text-primary{% else %}text-muted-foreground{% endif %}"
+                   @click="$dispatch('toggle-mobile-menu')">
+                    Post-Mortem
+                </a>
+                <a href="/admin/"
+                   class="text-lg font-medium transition-colors hover:text-primary text-muted-foreground"
+                   @click="$dispatch('toggle-mobile-menu')">
+                    Admin
+                </a>
+            </nav>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-[1008px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-card border-t border-border mt-12">
+        <div class="max-w-[1008px] mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold text-foreground mb-4">SmartAcca</h3>
+                    <p class="text-muted-foreground text-sm">
+                        AI-driven football accumulator predictions powered by Google Gemini and API-Football.
+                    </p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-foreground mb-4">Links</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="/" class="text-muted-foreground hover:text-accent">Dashboard</a></li>
+                        <li><a href="/admin/" class="text-muted-foreground hover:text-accent">Admin</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-foreground mb-4">Technology</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li class="text-muted-foreground">Google Gemini AI</li>
+                        <li class="text-muted-foreground">API-Football</li>
+                        <li class="text-muted-foreground">Django</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-border mt-8 pt-8 text-center text-muted-foreground text-sm">
+                <p>&copy; {% now "Y" %} SmartAcca. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,334 @@
+{% extends 'predictions/base.html' %}
+
+{% block title %}Post-Mortem Analysis - SmartAcca{% endblock %}
+
+{% block content %}
+<style>
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  [x-cloak]{ display:none !important; }
+</style>
+
+<!-- Header -->
+<div class="mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
+        Post-Mortem Analysis
+      </h1>
+      <p class="mt-1 text-sm text-muted-foreground">AI-powered prediction accuracy insights</p>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex gap-2">
+      <select onchange="window.location.href='?days='+this.value+'&outcome={{ outcome_filter }}'"
+              class="px-3 py-2 bg-card border border-border rounded-md text-sm text-foreground">
+        <option value="7" {% if days_back == 7 %}selected{% endif %}>Last 7 days</option>
+        <option value="14" {% if days_back == 14 %}selected{% endif %}>Last 14 days</option>
+        <option value="30" {% if days_back == 30 %}selected{% endif %}>Last 30 days</option>
+      </select>
+
+      <select onchange="window.location.href='?days={{ days_back }}&outcome='+this.value"
+              class="px-3 py-2 bg-card border border-border rounded-md text-sm text-foreground">
+        <option value="all" {% if outcome_filter == 'all' %}selected{% endif %}>All Predictions</option>
+        <option value="correct" {% if outcome_filter == 'correct' %}selected{% endif %}>Correct Only</option>
+        <option value="incorrect" {% if outcome_filter == 'incorrect' %}selected{% endif %}>Incorrect Only</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Statistics Cards -->
+{% if total_predictions > 0 %}
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+  <!-- Overall Accuracy -->
+  <div class="bg-card border border-border rounded-lg p-5">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Overall Accuracy</span>
+      <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+    </div>
+    <div class="text-3xl font-bold {% if accuracy >= 60 %}text-primary{% elif accuracy >= 40 %}text-accent{% else %}text-red-500{% endif %}">
+      {{ accuracy|floatformat:1 }}%
+    </div>
+    <div class="mt-1 text-xs text-muted-foreground">{{ total_predictions }} total predictions</div>
+  </div>
+
+  <!-- Correct Predictions -->
+  <div class="bg-card border border-border rounded-lg p-5">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Correct</span>
+      <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <div class="text-3xl font-bold text-primary">{{ correct_predictions }}</div>
+    <div class="mt-1 text-xs text-muted-foreground">Successful predictions</div>
+  </div>
+
+  <!-- Incorrect Predictions -->
+  <div class="bg-card border border-border rounded-lg p-5">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">Incorrect</span>
+      <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <div class="text-3xl font-bold text-red-500">{{ incorrect_predictions }}</div>
+    <div class="mt-1 text-xs text-muted-foreground">Failed predictions</div>
+  </div>
+
+  <!-- High Confidence Accuracy -->
+  <div class="bg-card border border-border rounded-lg p-5">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase tracking-wide text-muted-foreground">High Confidence (8.0+)</span>
+      <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    </div>
+    <div class="text-3xl font-bold text-accent">{{ high_conf_accuracy|floatformat:1 }}%</div>
+    <div class="mt-1 text-xs text-muted-foreground">{{ high_conf_total }} matches</div>
+  </div>
+</div>
+
+<!-- Results Table -->
+{% if matches %}
+<div class="bg-card border border-border rounded-lg overflow-hidden">
+  <!-- Desktop Table -->
+  <div class="hidden md:block overflow-x-auto max-h-[70vh] overflow-y-auto no-scrollbar">
+    <table class="w-full">
+      <thead class="bg-secondary border-b border-border sticky top-0 z-10">
+        <tr>
+          <th class="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
+          <th class="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Match</th>
+          <th class="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score</th>
+          <th class="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prediction</th>
+          <th class="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Confidence</th>
+          <th class="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Result</th>
+          <th class="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground w-16">Analysis</th>
+        </tr>
+      </thead>
+      {% for match in matches %}
+      <tbody x-data="{ expanded: false }" class="border-b border-border">
+        <tr class="hover:bg-secondary/30 transition-colors">
+          <td class="py-3 px-4 text-sm text-muted-foreground">{{ match.match_date|date:"M d" }}</td>
+          <td class="py-3 px-4">
+            <div class="font-medium text-foreground">{{ match.home_team }} vs {{ match.away_team }}</div>
+            <div class="text-xs text-muted-foreground">{{ match.league_name }}</div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <div class="font-bold text-foreground">{{ match.home_score }} - {{ match.away_score }}</div>
+          </td>
+          <td class="py-3 px-4 text-sm text-foreground">{{ match.suggested_bet }}</td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-block px-2 py-0.5 bg-muted text-muted-foreground rounded text-sm font-medium">
+              {{ match.confidence_score|floatformat:1 }}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            {% if match.prediction_correct %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary rounded-md text-sm font-semibold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              WIN
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 bg-red-500/20 text-red-500 rounded-md text-sm font-semibold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+              LOSS
+            </span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4 text-center">
+            {% if match.post_mortem_analysis %}
+            <button @click="expanded = !expanded"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary transition-colors">
+              <svg class="w-5 h-5 text-muted-foreground transition-transform duration-200"
+                   :class="{ 'rotate-180': expanded }"
+                   fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            {% else %}
+            <span class="text-xs text-muted-foreground">N/A</span>
+            {% endif %}
+          </td>
+        </tr>
+
+        <!-- AI Post-Mortem Row -->
+        {% if match.post_mortem_analysis %}
+        <tr x-show="expanded" x-collapse x-cloak class="bg-secondary/50">
+          <td colspan="7" class="px-4 py-0">
+            <div class="py-5 px-4">
+              <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+                <div class="flex-1">
+                  <h4 class="text-sm font-semibold uppercase tracking-wide text-accent mb-2">AI Post-Mortem Analysis</h4>
+                  <p class="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{{ match.post_mortem_analysis }}</p>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+
+  <!-- Mobile Cards -->
+  <div class="md:hidden divide-y divide-border">
+    {% for match in matches %}
+    <div x-data="{ expanded: false }" class="p-4">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs text-muted-foreground">{{ match.match_date|date:"M d" }}</span>
+            {% if match.prediction_correct %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/20 text-primary rounded text-xs font-bold">
+              ✓ WIN
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500/20 text-red-500 rounded text-xs font-bold">
+              ✗ LOSS
+            </span>
+            {% endif %}
+          </div>
+          <h3 class="font-semibold text-foreground mb-1">{{ match.home_team }} {{ match.home_score }} - {{ match.away_score }} {{ match.away_team }}</h3>
+          <p class="text-xs text-muted-foreground mb-2">{{ match.league_name }}</p>
+          <p class="text-sm text-foreground"><strong>Prediction:</strong> {{ match.suggested_bet }}</p>
+          <p class="text-sm text-muted-foreground"><strong>Confidence:</strong> {{ match.confidence_score|floatformat:1 }}/10</p>
+        </div>
+        {% if match.post_mortem_analysis %}
+        <button @click="expanded = !expanded" class="flex-shrink-0 w-9 h-9 rounded-md hover:bg-secondary transition-colors">
+          <svg class="w-5 h-5 text-muted-foreground transition-transform duration-200 mx-auto"
+               :class="{ 'rotate-180': expanded }"
+               fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </button>
+        {% endif %}
+      </div>
+
+      {% if match.post_mortem_analysis %}
+      <div x-show="expanded" x-collapse x-cloak class="mt-3 pt-3 border-t border-border">
+        <div class="flex items-start gap-2 mb-2">
+          <svg class="w-4 h-4 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+          </svg>
+          <h4 class="text-xs font-semibold uppercase tracking-wide text-accent">AI Post-Mortem</h4>
+        </div>
+        <p class="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{{ match.post_mortem_analysis }}</p>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if matches.paginator.num_pages > 1 %}
+  <div class="px-4 py-4 bg-card border-t border-border flex items-center justify-between">
+    <div class="flex-1 flex justify-between sm:hidden">
+      {% if matches.has_previous %}
+      <a href="?page={{ matches.previous_page_number }}&days={{ days_back }}&outcome={{ outcome_filter }}" class="relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-foreground bg-secondary hover:bg-secondary/80">
+        Previous
+      </a>
+      {% else %}
+      <span class="relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-muted-foreground bg-secondary cursor-not-allowed">Previous</span>
+      {% endif %}
+      
+      {% if matches.has_next %}
+      <a href="?page={{ matches.next_page_number }}&days={{ days_back }}&outcome={{ outcome_filter }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-foreground bg-secondary hover:bg-secondary/80">
+        Next
+      </a>
+      {% else %}
+      <span class="ml-3 relative inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-md text-muted-foreground bg-secondary cursor-not-allowed">Next</span>
+      {% endif %}
+    </div>
+    <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+      <div>
+        <p class="text-sm text-muted-foreground">
+          Showing
+          <span class="font-medium">{{ matches.start_index }}</span>
+          to
+          <span class="font-medium">{{ matches.end_index }}</span>
+          of
+          <span class="font-medium">{{ matches.paginator.count }}</span>
+          results
+        </p>
+      </div>
+      <div>
+        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+          {% if matches.has_previous %}
+          <a href="?page={{ matches.previous_page_number }}&days={{ days_back }}&outcome={{ outcome_filter }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-border bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80">
+            <span class="sr-only">Previous</span>
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+          </a>
+          {% endif %}
+
+          {% for i in matches.paginator.page_range %}
+            {% if matches.number == i %}
+            <span aria-current="page" class="z-10 bg-primary/20 border-primary text-primary relative inline-flex items-center px-4 py-2 border text-sm font-medium">{{ i }}</span>
+            {% elif i > matches.number|add:'-3' and i < matches.number|add:'3' %}
+            <a href="?page={{ i }}&days={{ days_back }}&outcome={{ outcome_filter }}" class="bg-secondary border-border text-muted-foreground hover:bg-secondary/80 relative inline-flex items-center px-4 py-2 border text-sm font-medium">{{ i }}</a>
+            {% endif %}
+          {% endfor %}
+
+          {% if matches.has_next %}
+          <a href="?page={{ i }}&days={{ days_back }}&outcome={{ outcome_filter }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-border bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80">
+            <span class="sr-only">Next</span>
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+            </svg>
+          </a>
+          {% endif %}
+        </nav>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<!-- No Results -->
+<div class="bg-card border border-border rounded-lg p-12">
+  <div class="text-center">
+    <svg class="mx-auto h-12 w-12 text-muted-foreground mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    </svg>
+    <h3 class="text-xl font-semibold text-foreground mb-2">No Results Available</h3>
+    <p class="text-muted-foreground mb-6">
+      Run the results fetching command to generate post-mortem analysis.
+    </p>
+    <div class="bg-secondary rounded-lg p-4 inline-block border border-border">
+      <code class="text-primary font-mono text-sm">
+        python manage.py fetch_results
+      </code>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- No Predictions -->
+<div class="bg-card border border-border rounded-lg p-12">
+  <div class="text-center">
+    <svg class="mx-auto h-12 w-12 text-muted-foreground mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+    </svg>
+    <h3 class="text-xl font-semibold text-foreground mb-2">No Completed Predictions</h3>
+    <p class="text-muted-foreground">
+      No accumulator predictions with results in the selected time period.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
