@@ -15,8 +15,8 @@ def dashboard(request):
     status_filter = request.GET.get('status', 'all')  # all, upcoming, completed, won, lost
     page = request.GET.get('page', 1)
 
-    # Base query
-    base_query = Match.objects.filter(is_in_daily_acca=True)
+    # Base query - show all analyzed matches (excluding unanalyzed ones with 0 confidence)
+    base_query = Match.objects.exclude(confidence_score=0.0)
 
     # Apply date filter
     today = timezone.now().date()

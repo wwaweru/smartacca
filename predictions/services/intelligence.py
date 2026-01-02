@@ -5,6 +5,8 @@ Integrates with API-Football and Google Gemini AI to analyze match predictions
 import requests
 import json
 import logging
+import time
+import random
 from django.conf import settings
 from google import genai
 
@@ -605,11 +607,14 @@ class GeminiAnalyzer:
 
     def __init__(self):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_name = 'gemini-flash-lite-latest'
+        # Use Gemini 2.5 Flash - much higher rate limits than flash-lite
+        self.model_name = 'models/gemini-2.5-flash'  # Higher limits than flash-lite
+        self.max_retries = 3
+        self.base_delay = 1  # Base delay in seconds
 
     def analyze_match(self, match_data, api_stats):
         """
-        Analyze a match using Gemini AI with Google Search grounding.
+        Analyze a match using Gemini AI with Google Search grounding and retry logic.
 
         Args:
             match_data: Dictionary with match information
@@ -618,41 +623,67 @@ class GeminiAnalyzer:
         Returns:
             dict: Analysis with confidence score and rationale
         """
-        try:
-            prompt = self._build_analysis_prompt(match_data, api_stats)
+        prompt = self._build_analysis_prompt(match_data, api_stats)
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                # Add small delay between requests to prevent hitting rate limits
+                if attempt > 0:
+                    delay = self._calculate_exponential_backoff(attempt)
+                    logger.info(f"Retrying Gemini analysis for {match_data['home_team']} vs {match_data['away_team']} (attempt {attempt + 1}) after {delay:.1f}s delay")
+                    time.sleep(delay)
+                
+                # Enable Google Search grounding for real-time data
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config={
+                        'tools': [{'google_search': {}}]  # Enable Google Search grounding
+                    }
+                )
+                analysis_text = response.text
 
-            # Enable Google Search grounding for real-time data
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config={
-                    'tools': [{'google_search': {}}]  # Enable Google Search grounding
-                }
-            )
-            analysis_text = response.text
+                # Log grounding metadata if available
+                if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                        logger.info(f"Gemini used Google Search grounding for {match_data['home_team']} vs {match_data['away_team']}")
+                        if hasattr(candidate.grounding_metadata, 'search_entry_point'):
+                            logger.debug(f"Search queries executed: {candidate.grounding_metadata.search_entry_point}")
 
-            # Log grounding metadata if available
-            if hasattr(response, 'candidates') and len(response.candidates) > 0:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                    logger.info(f"Gemini used Google Search grounding for {match_data['home_team']} vs {match_data['away_team']}")
-                    if hasattr(candidate.grounding_metadata, 'search_entry_point'):
-                        logger.debug(f"Search queries executed: {candidate.grounding_metadata.search_entry_point}")
+                # Parse the response to extract confidence score and rationale
+                result = self._parse_gemini_response(analysis_text)
 
-            # Parse the response to extract confidence score and rationale
-            result = self._parse_gemini_response(analysis_text)
+                logger.info(f"Gemini analysis completed for {match_data['home_team']} vs {match_data['away_team']} (attempt {attempt + 1})")
+                return result
 
-            logger.info(f"Gemini analysis completed for {match_data['home_team']} vs {match_data['away_team']}")
-            return result
-
-        except Exception as e:
-            logger.error(f"Error in Gemini analysis: {str(e)}")
-            return {
-                'confidence_score': 0.0,
-                'rationale': 'Analysis unavailable',
-                'risk_level': 'High Risk',
-                'suggested_bet': 'N/A'
-            }
+            except Exception as e:
+                error_str = str(e)
+                is_rate_limit = '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str or 'quota' in error_str.lower()
+                
+                if is_rate_limit:
+                    # Extract retry delay from error message if available
+                    retry_delay = self._extract_retry_delay_from_error(error_str)
+                    
+                    if attempt < self.max_retries:
+                        if retry_delay:
+                            logger.warning(f"Rate limit hit for {match_data['home_team']} vs {match_data['away_team']}. API suggests waiting {retry_delay}s. Will retry in {retry_delay + 1}s (attempt {attempt + 1}/{self.max_retries + 1})")
+                            time.sleep(retry_delay + 1)  # Add 1 second buffer
+                        else:
+                            delay = self._calculate_exponential_backoff(attempt + 1)
+                            logger.warning(f"Rate limit hit for {match_data['home_team']} vs {match_data['away_team']}. Will retry in {delay:.1f}s (attempt {attempt + 1}/{self.max_retries + 1})")
+                            time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"Max retries exceeded for {match_data['home_team']} vs {match_data['away_team']} due to rate limiting: {error_str}")
+                        return self._get_fallback_analysis(f"Rate limit exceeded after {self.max_retries} retries")
+                else:
+                    # Non-rate-limit error, fail immediately
+                    logger.error(f"Error in Gemini analysis for {match_data['home_team']} vs {match_data['away_team']}: {error_str}")
+                    return self._get_fallback_analysis(f"Analysis error: {error_str}")
+        
+        # This should never be reached, but just in case
+        return self._get_fallback_analysis("Unexpected retry loop exit")
 
     def _build_analysis_prompt(self, match_data, api_stats):
         """
@@ -816,6 +847,69 @@ Return ONLY the JSON object, no additional text.
                 'suggested_bet': 'N/A',
                 'rationale': response_text[:200] if response_text else 'Unable to parse analysis.'
             }
+    
+    def _calculate_exponential_backoff(self, attempt):
+        """
+        Calculate exponential backoff delay with jitter.
+        
+        Args:
+            attempt: Current retry attempt number (starting from 1)
+        
+        Returns:
+            float: Delay in seconds
+        """
+        # Exponential backoff: base_delay * (2 ^ attempt) + random jitter
+        delay = self.base_delay * (2 ** attempt)
+        # Add jitter to prevent thundering herd
+        jitter = random.uniform(0, min(delay * 0.1, 1.0))
+        return delay + jitter
+    
+    def _extract_retry_delay_from_error(self, error_str):
+        """
+        Extract retry delay from Gemini API error message.
+        
+        Args:
+            error_str: Error message string
+        
+        Returns:
+            float or None: Suggested retry delay in seconds
+        """
+        import re
+        
+        # Look for retry delay patterns in the error message
+        # Pattern: "retry in 14.26332542s" or "retryDelay: '14s'"
+        patterns = [
+            r'retry in (\d+(?:\.\d+)?)s',
+            r"retryDelay['\"]:\s*['\"](\d+(?:\.\d+)?)s?['\"]",
+            r'Please retry in (\d+(?:\.\d+)?)s'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, error_str, re.IGNORECASE)
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    continue
+        
+        return None
+    
+    def _get_fallback_analysis(self, reason):
+        """
+        Return fallback analysis when Gemini API fails.
+        
+        Args:
+            reason: Reason for fallback
+        
+        Returns:
+            dict: Fallback analysis structure
+        """
+        return {
+            'confidence_score': 0.0,
+            'rationale': f'Analysis unavailable: {reason}',
+            'risk_level': 'High Risk',
+            'suggested_bet': 'N/A'
+        }
 
 
 class MatchIntelligenceService:
