@@ -16,7 +16,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Starting SmartAcca Scheduler...'))
         
         # Schedule the daily morning task
-        schedule.every().day.at("07:00").do(self.job_fetch_matches)
+        schedule.every().day.at("04:00").do(self.job_fetch_matches)
         
         # If the script restarts during the day, we might need to kickstart the result fetching
         # if there are unfinished matches for today.
