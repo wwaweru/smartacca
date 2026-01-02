@@ -128,7 +128,14 @@
 
             <!-- Match -->
             <td class="py-4 px-4">
-              <div class="font-semibold text-foreground">{{ match.home_team }} vs {{ match.away_team }}</div>
+              <div class="flex items-center gap-2">
+                <div class="font-semibold text-foreground">{{ match.home_team }} vs {{ match.away_team }}</div>
+                {% if match.is_in_daily_acca %}
+                <span style="background-color: yellow; color: black; padding: 3px 6px; font-weight: bold; border: 1px solid red; border-radius: 4px; font-size: 10px;">
+                  🌟 ACCA
+                </span>
+                {% endif %}
+              </div>
             </td>
 
             <!-- League -->
@@ -252,7 +259,14 @@
               <span class="bg-muted text-muted-foreground px-2 py-0.5 rounded-full text-xs font-bold">{{ match.confidence_score|floatformat:1 }}</span>
               {% endif %}
             </div>
-            <h3 class="font-semibold text-foreground text-base mb-1">{{ match.home_team }} vs {{ match.away_team }}</h3>
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="font-semibold text-foreground text-base">{{ match.home_team }} vs {{ match.away_team }}</h3>
+              {% if match.is_in_daily_acca %}
+              <span style="background-color: yellow; color: black; padding: 2px 5px; font-weight: bold; border: 1px solid red; border-radius: 4px; font-size: 9px;">
+                🌟 ACCA
+              </span>
+              {% endif %}
+            </div>
             <p class="text-xs text-muted-foreground">{{ match.league_name }} · {{ match.match_date|date:"M d, H:i" }}</p>
           </div>
           <button @click="expanded = !expanded"
