@@ -747,6 +747,20 @@ Recent Results (from Football-Data.org):"""
 
         prompt += f"""
 
+⚠️ CRITICAL: FOOTBALL'S INHERENT RANDOMNESS WARNING ⚠️
+
+Football has fundamental unpredictability that no amount of data can eliminate:
+- Even with perfect analysis, 70-80% accuracy is exceptionally good
+- Individual match upsets are NORMAL and EXPECTED, not failures
+- A 40% accuracy rate may indicate optimal risk-taking rather than poor analysis
+- Your goal is finding sustainable edges, not predicting every outcome
+
+VARIANCE-AWARE ANALYSIS PRINCIPLES:
+1. **Embrace Uncertainty**: Acknowledge when outcomes are essentially coin flips
+2. **Avoid Overconfidence**: High confidence (8.0+) should be rare and well-justified
+3. **Signal vs Noise**: Focus on consistent patterns, not single-match anomalies
+4. **Calibrated Expectations**: A "strong prediction" still fails 25-30% of the time
+
 TASK - USE GOOGLE SEARCH TO ENHANCE ANALYSIS:
 
 You have access to Google Search! Use it to supplement the data above with:
@@ -768,36 +782,45 @@ You have access to Google Search! Use it to supplement the data above with:
    - If league standings not available above, search for: "{match_data.get('league_name')} table standings"
    - If recent results not available, search for team form
 
-ANALYSIS REQUIREMENTS:
+UNCERTAINTY-AWARE ANALYSIS REQUIREMENTS:
 
-Analyze the match considering ALL available data:
-1. **League Position & Form**: Use standings data provided above (if available) or search for it
-2. **Recent Results**: Use recent match data provided above (if available) or search for it
-3. **Injury & Suspension Impact**: Use injury data provided + search for suspensions
-4. **Head-to-Head Record**: Search for this information
-5. **Expert Opinions**: Search for expert predictions and betting trends
-6. **Home Advantage**: Consider venue and home team advantage
-7. **Current Season Context**: Look for any recent momentum shifts or tactical changes
+Analyze the match while acknowledging fundamental unpredictability:
+1. **Data Quality Assessment**: Evaluate completeness and reliability of available data
+2. **Signal Consistency**: Check if different indicators point in the same direction
+3. **Conflicting Evidence**: Identify and weight contradictory signals appropriately
+4. **Variance Factors**: Note high-variance elements (inconsistent form, evenly matched teams)
+5. **Edge Detection**: Determine if there's a genuine predictive edge or if it's a coin flip
+6. **Historical Context**: Consider but don't over-rely on head-to-head records
+7. **Expert Consensus**: Use expert opinions as one signal among many, not gospel
 
-CONFIDENCE SCORING:
-- With complete data (standings + form + injuries + H2H + expert analysis): 6.0-8.5/10.0 confidence
-- With good data but some gaps: 5.0-7.0/10.0 confidence
-- With partial data: 3.0-5.0/10.0 confidence
-- With minimal data: max 3.0/10.0 confidence
+REVISED CONFIDENCE SCORING (Realistic Ranges):
+- Exceptional Edge (8.0-8.5/10): Multiple strong confirming factors, minimal conflicting evidence
+  → Expected accuracy: 65-75% (still expect 25-35% failures)
+- Strong Edge (7.0-8.0/10): Clear favorite with good supporting data
+  → Expected accuracy: 60-70%
+- Moderate Edge (6.0-7.0/10): Reasonable confidence with some uncertainty
+  → Expected accuracy: 55-65%
+- Weak Edge (4.0-6.0/10): Slight advantage but significant uncertainty
+  → Expected accuracy: 50-60%
+- No Edge (0.0-4.0/10): Insufficient data or true coin flip situation
+  → Expected accuracy: <50%
 
-RISK LEVELS:
-- Low Risk: Clear favorite, strong form, comprehensive data, expert consensus
-- Medium Risk: Moderate certainty, some data gaps, mixed expert opinions
-- High Risk: Unpredictable match, limited data, conflicting signals
+UNCERTAINTY CATEGORIES:
+- **Predictable**: Clear patterns, multiple confirming factors, low variance
+- **Uncertain**: Mixed signals, moderate confidence, proceed with caution
+- **Coin Flip**: Evenly matched, essentially random - SKIP or minimal stakes
+- **Upset Prone**: Favorite vulnerable to specific factors - consider value
 
-Provide a specific betting recommendation (e.g., "Home Win", "Over 2.5 Goals", "Both Teams to Score", "Draw") based on all available data. Only suggest "N/A" if you cannot find sufficient information even after searching.
+**IMPORTANT**: If multiple indicators conflict or data quality is poor, choose a LOWER confidence score and acknowledge the uncertainty. Better to be humble and calibrated than overconfident.
 
 Provide your response in the following JSON format:
 {{
-    "confidence_score": <float between 0.0 and 10.0, where 10 is highest confidence>,
+    "confidence_score": <float between 0.0 and 8.5 (NOT 10.0), calibrated to realistic expectations>,
     "risk_level": "<Low Risk|Medium Risk|High Risk>",
-    "suggested_bet": "<specific betting recommendation>",
-    "rationale": "<2-3 sentence explanation of your assessment and why this bet is recommended>"
+    "uncertainty_category": "<Predictable|Uncertain|Coin Flip|Upset Prone>",
+    "suggested_bet": "<specific betting recommendation or 'Skip - No Edge'>",
+    "rationale": "<2-3 sentence explanation including data quality assessment and uncertainty acknowledgment>",
+    "key_uncertainty_factors": "<list 1-2 main factors that could cause prediction to fail>"
 }}
 
 Return ONLY the JSON object, no additional text.
@@ -832,8 +855,10 @@ Return ONLY the JSON object, no additional text.
             return {
                 'confidence_score': float(parsed.get('confidence_score', 0.0)),
                 'risk_level': parsed.get('risk_level', 'High Risk'),
+                'uncertainty_category': parsed.get('uncertainty_category', 'Uncertain'),
                 'suggested_bet': parsed.get('suggested_bet', 'N/A'),
-                'rationale': parsed.get('rationale', 'No rationale provided.')
+                'rationale': parsed.get('rationale', 'No rationale provided.'),
+                'key_uncertainty_factors': parsed.get('key_uncertainty_factors', 'Unknown factors')
             }
 
         except json.JSONDecodeError as e:
@@ -844,8 +869,10 @@ Return ONLY the JSON object, no additional text.
             return {
                 'confidence_score': 5.0,
                 'risk_level': 'Medium Risk',
+                'uncertainty_category': 'Uncertain',
                 'suggested_bet': 'N/A',
-                'rationale': response_text[:200] if response_text else 'Unable to parse analysis.'
+                'rationale': response_text[:200] if response_text else 'Unable to parse analysis.',
+                'key_uncertainty_factors': 'Parsing error'
             }
     
     def _calculate_exponential_backoff(self, attempt):
@@ -908,7 +935,9 @@ Return ONLY the JSON object, no additional text.
             'confidence_score': 0.0,
             'rationale': f'Analysis unavailable: {reason}',
             'risk_level': 'High Risk',
-            'suggested_bet': 'N/A'
+            'uncertainty_category': 'Uncertain',
+            'suggested_bet': 'N/A',
+            'key_uncertainty_factors': f'System error: {reason}'
         }
 
 
@@ -921,6 +950,10 @@ class MatchIntelligenceService:
         self.api_football = APIFootballClient()
         self.football_data = FootballDataOrgClient()
         self.gemini = GeminiAnalyzer()
+        # Import uncertainty analyzer here to avoid circular imports
+        from .uncertainty_analyzer import ConfidenceCalibrator, UncertaintyAnalyzer
+        self.confidence_calibrator = ConfidenceCalibrator()
+        self.uncertainty_analyzer = UncertaintyAnalyzer()
 
     def get_todays_matches(self, date=None):
         """
@@ -975,7 +1008,16 @@ class MatchIntelligenceService:
         # Step 3: Get Gemini AI analysis with Google Search grounding
         gemini_analysis = self.gemini.analyze_match(match_data, api_stats)
 
-        # Step 3: Combine results
+        # Step 4: Analyze uncertainty and calibrate confidence
+        uncertainty_analysis = self.uncertainty_analyzer.analyze_uncertainty(
+            match_data, api_stats, gemini_analysis
+        )
+        
+        # Calibrate the raw confidence score to realistic probability
+        raw_confidence = gemini_analysis['confidence_score']
+        calibration_result = self.confidence_calibrator.calibrate_confidence(raw_confidence)
+        
+        # Step 5: Combine results with uncertainty-aware metrics
         result = {
             'home_team': home_team,
             'away_team': away_team,
@@ -984,9 +1026,17 @@ class MatchIntelligenceService:
             'fixture_id': fixture_id,
             'api_stats': api_stats,
             'gemini_analysis': gemini_analysis['rationale'],
-            'confidence_score': gemini_analysis['confidence_score'],
+            'confidence_score': raw_confidence,  # Keep original for display
+            'calibrated_probability': calibration_result['calibrated_probability'],
+            'confidence_interval': calibration_result['confidence_interval'],
             'risk_level': gemini_analysis['risk_level'],
-            'suggested_bet': gemini_analysis.get('suggested_bet', 'N/A')
+            'uncertainty_category': gemini_analysis.get('uncertainty_category', uncertainty_analysis['category']),
+            'uncertainty_factors': uncertainty_analysis['uncertainty_factors'],
+            'uncertainty_score': uncertainty_analysis['uncertainty_score'],
+            'data_quality': uncertainty_analysis['data_quality'],
+            'suggested_bet': gemini_analysis.get('suggested_bet', 'N/A'),
+            'betting_recommendation': uncertainty_analysis['recommendation'],
+            'key_uncertainty_factors': gemini_analysis.get('key_uncertainty_factors', 'Unknown factors')
         }
 
         return result

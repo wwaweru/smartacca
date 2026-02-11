@@ -4,6 +4,10 @@ from django.db.models import Q, Count, Case, When, IntegerField
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from datetime import timedelta
 from .models import Match
+from .filters import MatchFilter
+
+# Import MatchFilter to access UNCERTAINTY_CHOICES
+from .filters import MatchFilter
 
 
 def dashboard(request):
@@ -41,6 +45,10 @@ def dashboard(request):
     elif status_filter == 'lost':
         matches_query = matches_query.filter(prediction_correct=False)
 
+    # Apply django-filter for confidence and uncertainty
+    match_filter = MatchFilter(request.GET, queryset=matches_query)
+    matches_query = match_filter.qs
+
     matches_query = matches_query.order_by('-match_date', '-confidence_score')
 
     # Pagination
@@ -73,6 +81,9 @@ def dashboard(request):
     if matches_query.exists():
         latest_update = matches_query.latest('updated_at').updated_at
 
+    # Removed: Dynamic fetching of uncertainty categories, now using fixed choices from filters.py
+    # uncertainty_categories = Match.objects.exclude(uncertainty_category__isnull=True).exclude(uncertainty_category__exact='').values_list('uncertainty_category', flat=True).distinct()
+
     context = {
         'acca_matches': matches,
         'total_matches': total_matches,
@@ -85,88 +96,10 @@ def dashboard(request):
         'current_date': timezone.now(),
         'date_filter': date_filter,
         'status_filter': status_filter,
+        'filter': match_filter,
+        'uncertainty_categories': [choice[0] for choice in MatchFilter.UNCERTAINTY_CHOICES],
     }
 
     return render(request, 'predictions/dashboard.html', context)
 
 
-def post_mortem(request):
-    """
-    Post-mortem analysis view showing prediction accuracy and AI insights.
-    """
-    # Filter parameters
-    days_back = int(request.GET.get('days', 7))
-    outcome_filter = request.GET.get('outcome', 'all')  # all, correct, incorrect
-    page = request.GET.get('page', 1)
-
-    # Calculate date range
-    cutoff_date = timezone.now() - timedelta(days=days_back)
-
-    # Base query: completed matches with results
-    base_query = Match.objects.filter(
-        match_date__gte=cutoff_date,
-        result_fetched=True,
-        match_status='FT',
-        is_in_daily_acca=True
-    )
-
-    # Apply outcome filter
-    if outcome_filter == 'correct':
-        matches_query = base_query.filter(prediction_correct=True)
-    elif outcome_filter == 'incorrect':
-        matches_query = base_query.filter(prediction_correct=False)
-    else:
-        matches_query = base_query
-
-    matches_query = matches_query.order_by('-match_date')
-
-    # Pagination
-    paginator = Paginator(matches_query, 10)  # 10 matches per page
-    try:
-        matches = paginator.page(page)
-    except PageNotAnInteger:
-        matches = paginator.page(1)
-    except EmptyPage:
-        matches = paginator.page(paginator.num_pages)
-
-    # Calculate statistics
-    total_predictions = base_query.count()
-    correct_predictions = base_query.filter(prediction_correct=True).count()
-    incorrect_predictions = base_query.filter(prediction_correct=False).count()
-    accuracy = (correct_predictions / total_predictions * 100) if total_predictions > 0 else 0
-
-    # Accuracy by confidence level
-    high_conf_matches = base_query.filter(confidence_score__gte=8.0)
-    high_conf_correct = high_conf_matches.filter(prediction_correct=True).count()
-    high_conf_total = high_conf_matches.count()
-    high_conf_accuracy = (high_conf_correct / high_conf_total * 100) if high_conf_total > 0 else 0
-
-    medium_conf_matches = base_query.filter(confidence_score__gte=6.0, confidence_score__lt=8.0)
-    medium_conf_correct = medium_conf_matches.filter(prediction_correct=True).count()
-    medium_conf_total = medium_conf_matches.count()
-    medium_conf_accuracy = (medium_conf_correct / medium_conf_total * 100) if medium_conf_total > 0 else 0
-
-    # Group matches by date for daily view (only for the current page)
-    matches_by_date = {}
-    for match in matches:
-        date_key = match.match_date.date()
-        if date_key not in matches_by_date:
-            matches_by_date[date_key] = []
-        matches_by_date[date_key].append(match)
-
-    context = {
-        'matches': matches,
-        'matches_by_date': matches_by_date,
-        'total_predictions': total_predictions,
-        'correct_predictions': correct_predictions,
-        'incorrect_predictions': incorrect_predictions,
-        'accuracy': accuracy,
-        'high_conf_accuracy': high_conf_accuracy,
-        'high_conf_total': high_conf_total,
-        'medium_conf_accuracy': medium_conf_accuracy,
-        'medium_conf_total': medium_conf_total,
-        'days_back': days_back,
-        'outcome_filter': outcome_filter,
-    }
-
-    return render(request, 'predictions/post_mortem.html', context)

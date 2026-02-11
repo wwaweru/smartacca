@@ -34,18 +34,26 @@ class Command(BaseCommand):
             f"{match.away_score} {match.away_team} ({match.match_status})"
         )
 
-        # Evaluate prediction
-        if match.suggested_bet and match.match_status == 'FT':
+        # Evaluate prediction (only for genuinely finished matches)
+        if match.suggested_bet:
             from predictions.management.commands.fetch_results import Command as FetchCommand
             fetch_cmd = FetchCommand()
-            prediction_result = fetch_cmd._evaluate_prediction(match)
-            match.prediction_correct = prediction_result['correct']
-            match.prediction_outcome = prediction_result['outcome']
+            
+            if fetch_cmd._is_match_genuinely_finished(match):
+                prediction_result = fetch_cmd._evaluate_prediction(match)
+                match.prediction_correct = prediction_result['correct']
+                match.prediction_outcome = prediction_result['outcome']
 
-            outcome_icon = '✅' if prediction_result['correct'] else '❌'
-            self.stdout.write(
-                f"Prediction: {outcome_icon} {prediction_result['outcome']}"
-            )
+                outcome_icon = '✅' if prediction_result['correct'] else '❌'
+                self.stdout.write(
+                    f"Prediction: {outcome_icon} {prediction_result['outcome']}"
+                )
+            else:
+                # Don't set prediction result for suspicious finishes
+                self.stdout.write(self.style.WARNING('Match marked as finished but failed validation checks'))
+                match.prediction_correct = None
+                match.prediction_outcome = None
+                self.stdout.write('Prediction: ⏳ PENDING (waiting for genuine finish)')
 
             # Generate post-mortem if in acca
             if match.is_in_daily_acca:

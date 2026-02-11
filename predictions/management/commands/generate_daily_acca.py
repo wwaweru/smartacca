@@ -6,6 +6,7 @@ from django.utils import timezone
 from datetime import datetime
 from predictions.models import Match
 from predictions.services.intelligence import get_fixtures, analyze_match
+from predictions.services.uncertainty_analyzer import PostmortemPatternDetector
 import logging
 
 logger = logging.getLogger(__name__)
@@ -108,8 +109,11 @@ class Command(BaseCommand):
                 analyzed_matches.append(analysis)
 
                 self.stdout.write(f'  - Confidence Score: {analysis["confidence_score"]:.1f}/10.0')
+                self.stdout.write(f'  - Calibrated Probability: {analysis.get("calibrated_probability", 0.5):.1%}')
                 self.stdout.write(f'  - Risk Level: {analysis["risk_level"]}')
+                self.stdout.write(f'  - Uncertainty Category: {analysis.get("uncertainty_category", "Unknown")}')
                 self.stdout.write(f'  - Suggested Bet: {analysis.get("suggested_bet", "N/A")}')
+                self.stdout.write(f'  - Recommendation: {analysis.get("betting_recommendation", "Standard stake")}')
 
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f'  - Error analyzing match: {str(e)}'))
@@ -125,17 +129,74 @@ class Command(BaseCommand):
         # Sort all analyzed matches by confidence score (highest first)
         sorted_matches = sorted(analyzed_matches, key=lambda x: x['confidence_score'], reverse=True)
         
-        # Get top matches for accumulator (low and medium risk only)
-        low_risk_matches = [m for m in sorted_matches if m['risk_level'] == 'Low Risk']
-        medium_risk_matches = [m for m in sorted_matches if m['risk_level'] == 'Medium Risk']
-        acca_candidates = low_risk_matches + medium_risk_matches
+        # Get top matches using uncertainty-aware criteria
+        # Exclude 'Coin Flip' and very high uncertainty matches
+        acca_candidates = []
         
-        # Select top 5 for daily accumulator
-        top_5_matches = acca_candidates[:5] if len(acca_candidates) >= 5 else acca_candidates
+        # Initialize pattern detector for historical bias analysis
+        pattern_detector = PostmortemPatternDetector()
+        recent_patterns = pattern_detector.detect_systematic_biases(days_back=14)
+        pattern_exclusions = 0
+        
+        for match in sorted_matches:
+            uncertainty_cat = match.get('uncertainty_category', 'Uncertain')
+            calibrated_prob = match.get('calibrated_probability', 0.5)
+            suggested_bet = match.get('suggested_bet', 'N/A')
+            
+            # Skip matches that should be avoided
+            if uncertainty_cat == 'Coin Flip':
+                continue
+            if 'Skip' in suggested_bet:
+                continue
+            # TEMPORARY FIX: Lower threshold until calibration improves
+            if calibrated_prob < 0.30:  # Lowered from 0.52 to get some matches
+                continue
+            
+            # NEW: Skip matches with known failure patterns
+            if self._has_pattern_risk_flags(match, recent_patterns):
+                pattern_exclusions += 1
+                continue
+                
+            acca_candidates.append(match)
+        
+        # Sort by calibrated probability (better than raw confidence)
+        acca_candidates.sort(key=lambda x: x.get('calibrated_probability', 0.5), reverse=True)
+        
+        # Select top 5 for daily accumulator with risk limits
+        top_5_matches = []
+        coin_flip_count = 0
+        uncertain_count = 0
+        
+        for match in acca_candidates:
+            if len(top_5_matches) >= 5:
+                break
+                
+            uncertainty_cat = match.get('uncertainty_category', 'Uncertain')
+            
+            # Limit risky categories
+            if uncertainty_cat == 'Coin Flip':
+                if coin_flip_count >= 1:  # Max 1 coin flip per acca
+                    continue
+                coin_flip_count += 1
+            elif uncertainty_cat == 'Uncertain':
+                if uncertain_count >= 2:  # Max 2 uncertain per acca
+                    continue
+                uncertain_count += 1
+                
+            top_5_matches.append(match)
         
         self.stdout.write(f'Total matches analyzed: {len(sorted_matches)}')
+        self.stdout.write(f'Pattern-based exclusions: {pattern_exclusions}')
         self.stdout.write(f'Accumulator candidates (Low/Medium risk): {len(acca_candidates)}')
         self.stdout.write(f'Selected for daily accumulator: {len(top_5_matches)}')
+        
+        # Display pattern insights if available
+        if not recent_patterns.get('insufficient_data', False):
+            self.stdout.write('\nRecent failure patterns detected:')
+            for pattern_name, pattern_data in recent_patterns.get('patterns', {}).items():
+                frequency = pattern_data['frequency']
+                if frequency > 0.2:  # Only show significant patterns
+                    self.stdout.write(f'  - {pattern_name}: {frequency:.1%} of recent failures')
 
         # Step 5: Save ALL matches to database, mark accumulator matches
         self.stdout.write('\nStep 4: Saving all matches to database...')
@@ -191,22 +252,36 @@ class Command(BaseCommand):
                     from dateutil import parser
                     match_date = parser.parse(match_date)
 
+                # Prepare defaults with uncertainty metrics
+                defaults = {
+                    'home_team': match_data['home_team'],
+                    'away_team': match_data['away_team'],
+                    'match_date': match_date,
+                    'league_name': match_data.get('league_name', 'Unknown'),
+                    'tipster_1_pick': match_data.get('tipster_1_pick'),
+                    'tipster_2_pick': match_data.get('tipster_2_pick'),
+                    'tipster_3_pick': match_data.get('tipster_3_pick'),
+                    'gemini_analysis': match_data['gemini_analysis'],
+                    'confidence_score': match_data['confidence_score'],
+                    'suggested_bet': match_data.get('suggested_bet', 'N/A'),
+                    'is_in_daily_acca': is_in_acca
+                }
+                
+                # Add uncertainty metrics if analyzed
+                if fixture_info['analyzed']:
+                    import json
+                    defaults.update({
+                        'calibrated_probability': match_data.get('calibrated_probability'),
+                        'uncertainty_category': match_data.get('uncertainty_category'),
+                        'uncertainty_score': match_data.get('uncertainty_score'),
+                        'data_quality_score': match_data.get('data_quality', {}).get('score'),
+                        'key_uncertainty_factors': json.dumps(match_data.get('key_uncertainty_factors', [])) if match_data.get('key_uncertainty_factors') else None
+                    })
+
                 # Create or update match
                 match, created = Match.objects.update_or_create(
                     api_football_id=match_data.get('fixture_id', hash(f"{match_data['home_team']}{match_data['away_team']}") % 1000000),
-                    defaults={
-                        'home_team': match_data['home_team'],
-                        'away_team': match_data['away_team'],
-                        'match_date': match_date,
-                        'league_name': match_data.get('league_name', 'Unknown'),
-                        'tipster_1_pick': match_data.get('tipster_1_pick'),
-                        'tipster_2_pick': match_data.get('tipster_2_pick'),
-                        'tipster_3_pick': match_data.get('tipster_3_pick'),
-                        'gemini_analysis': match_data['gemini_analysis'],
-                        'confidence_score': match_data['confidence_score'],
-                        'suggested_bet': match_data.get('suggested_bet', 'N/A'),
-                        'is_in_daily_acca': is_in_acca
-                    }
+                    defaults=defaults
                 )
 
                 status = 'Created' if created else 'Updated'
@@ -272,3 +347,47 @@ class Command(BaseCommand):
         self.stdout.write('\n' + '='*60)
         self.stdout.write(self.style.SUCCESS('Done!'))
         self.stdout.write('\nView your accumulator at: http://127.0.0.1:8000/')
+
+    def _has_pattern_risk_flags(self, match, recent_patterns):
+        """
+        Check if a match has characteristics that match recent failure patterns.
+        Returns True if the match should be excluded based on historical biases.
+        """
+        if recent_patterns.get('insufficient_data', True):
+            return False  # No patterns detected, don't exclude
+        
+        patterns = recent_patterns.get('patterns', {})
+        gemini_analysis = match.get('gemini_analysis', '').lower()
+        confidence_score = match.get('confidence_score', 0)
+        suggested_bet = match.get('suggested_bet', '')
+        
+        # Check for overconfidence bias pattern
+        if 'overconfidence_bias' in patterns:
+            bias_frequency = patterns['overconfidence_bias']['frequency']
+            if bias_frequency > 0.3 and confidence_score >= 8.5:
+                logger.info(f"Excluding {match.get('home_team')} vs {match.get('away_team')} due to overconfidence bias pattern")
+                return True
+        
+        # Check for common failure phrase patterns
+        high_risk_phrases = [
+            ('overestimated', 0.3),
+            ('defensive stalemate', 0.25), 
+            ('upset potential', 0.25),
+            ('failed to account', 0.2)
+        ]
+        
+        for phrase, threshold in high_risk_phrases:
+            if phrase in patterns and patterns[phrase]['frequency'] > threshold:
+                # Check if this match's analysis contains similar language
+                risk_indicators = [
+                    phrase in gemini_analysis,
+                    'defensive' in gemini_analysis and 'low' in gemini_analysis,
+                    'tight' in gemini_analysis or 'close' in gemini_analysis,
+                    'upset' in suggested_bet.lower()
+                ]
+                
+                if any(risk_indicators):
+                    logger.info(f"Excluding {match.get('home_team')} vs {match.get('away_team')} due to '{phrase}' pattern")
+                    return True
+        
+        return False

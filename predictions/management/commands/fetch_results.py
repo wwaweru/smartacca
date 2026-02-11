@@ -40,21 +40,76 @@ class Command(BaseCommand):
             matches = Match.objects.filter(id=options['match_id'])
         elif options['date']:
             target_date = datetime.strptime(options['date'], '%Y-%m-%d').date()
-            matches = Match.objects.filter(match_date__date=target_date)
+            matches = Match.objects.filter(
+                match_date__date=target_date,
+                match_date__lte=timezone.now(),  # Ensure it's not a future match
+                result_fetched=False,  # Only process matches for which results haven't been fetched
+            ).exclude(
+                match_status__in=['NS', 'PST', 'CAN'] # Exclude Not Started, Postponed, Cancelled
+            )
         else:
             days_back = options['days_back']
             cutoff_date = timezone.now() - timedelta(days=days_back)
-            matches = Match.objects.filter(
+            
+            # PRIORITY: Process ACCA matches first, then major leagues, then others
+            acca_matches = Match.objects.filter(
+                match_date__gte=cutoff_date,
+                match_date__lte=timezone.now(),
+                result_fetched=False,
+                is_in_daily_acca=True
+            )
+            
+            # Major leagues (covered by scraper)
+            major_leagues = [
+                'Premier League', 'Championship', 'League One', 'League Two',
+                'La Liga', 'La Liga 2', 'Serie A', 'Serie B', 'Bundesliga', 'Ligue 1',
+                'Scottish Premiership'
+            ]
+            
+            major_league_matches = Match.objects.filter(
+                match_date__gte=cutoff_date,
+                match_date__lte=timezone.now(),
+                result_fetched=False,
+                league_name__in=major_leagues
+            ).exclude(is_in_daily_acca=True)  # Exclude ACCA matches already included
+            
+            # Other matches (lower priority)
+            other_matches = Match.objects.filter(
                 match_date__gte=cutoff_date,
                 match_date__lte=timezone.now(),
                 result_fetched=False
+            ).exclude(
+                league_name__in=major_leagues
+            ).exclude(
+                is_in_daily_acca=True
             )
+            
+            # Combine with prioritization: ACCA first, then major leagues, then others
+            matches = list(acca_matches) + list(major_league_matches[:20]) + list(other_matches[:10])
+            
+            if acca_matches.exists():
+                self.stdout.write(self.style.SUCCESS(f'🎯 Prioritizing {acca_matches.count()} ACCA matches'))
+            if major_league_matches.exists():
+                self.stdout.write(f'📈 Including {min(20, major_league_matches.count())} major league matches')
+            if other_matches.exists():
+                self.stdout.write(f'🌍 Including {min(10, other_matches.count())} other league matches')
 
-        if not matches.exists():
-            self.stdout.write(self.style.WARNING('No matches found to process.'))
-            return
+        # Convert to QuerySet if it's a list for consistent processing
+        if isinstance(matches, list):
+            if not matches:
+                self.stdout.write(self.style.WARNING('No matches found to process.'))
+                return
+            match_count = len(matches)
+            # Convert back to QuerySet for processing
+            match_ids = [m.id for m in matches]
+            matches = Match.objects.filter(id__in=match_ids)
+        else:
+            if not matches.exists():
+                self.stdout.write(self.style.WARNING('No matches found to process.'))
+                return
+            match_count = matches.count()
 
-        self.stdout.write(f'Found {matches.count()} match(es) to process.\n')
+        self.stdout.write(f'Found {match_count} match(es) to process.\n')
 
         successful = 0
         failed = 0
@@ -71,16 +126,24 @@ class Command(BaseCommand):
                     match.home_score = result['home_score']
                     match.away_score = result['away_score']
                     match.match_status = result['status']
-                    match.result_fetched = True
-                    match.result_fetched_at = timezone.now()
+
+                    # Only mark as fully fetched if the match is finished
+                    if result['status'] in ['FT', 'AET', 'PEN', 'AWD', 'WO']:
+                        match.result_fetched = True
+                        match.result_fetched_at = timezone.now()
+                    else:
+                        # Match is live, postponed, or not started - keep fetching
+                        match.result_fetched = False
+                        # Still update fetched_at to show we have the latest live info
+                        match.result_fetched_at = timezone.now()
 
                     self.stdout.write(
                         f"  Result: {match.home_team} {match.home_score} - "
                         f"{match.away_score} {match.away_team} ({match.match_status})"
                     )
 
-                    # Determine if prediction was correct
-                    if match.suggested_bet and match.match_status == 'FT':
+                    # Determine if prediction was correct (only for genuinely finished matches)
+                    if match.suggested_bet and self._is_match_genuinely_finished(match):
                         prediction_result = self._evaluate_prediction(match)
                         match.prediction_correct = prediction_result['correct']
                         match.prediction_outcome = prediction_result['outcome']
@@ -188,6 +251,43 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'    Scraper Error: {str(e)}'))
             return None
+
+    def _is_match_genuinely_finished(self, match):
+        """
+        Check if a match is genuinely finished, not just marked as FT by API error.
+        Adds validation to prevent premature marking of matches as won/lost.
+        """
+        # Must have FT status
+        if match.match_status != 'FT':
+            return False
+        
+        # Calculate time since match started
+        from django.utils import timezone
+        match_start = match.match_date
+        current_time = timezone.now()
+        time_since_start = current_time - match_start
+        
+        # If less than 85 minutes have passed since kickoff, be suspicious of FT status
+        if time_since_start.total_seconds() < 85 * 60:  # 85 minutes in seconds
+            # Additional checks for suspicious results
+            
+            # Check 1: 0-0 draw very soon after kickoff is suspicious
+            if (match.home_score == 0 and match.away_score == 0 and 
+                time_since_start.total_seconds() < 75 * 60):  # Less than 75 minutes
+                self.stdout.write(self.style.WARNING(
+                    f"  ⚠ Suspicious FT status: 0-0 after only {time_since_start.total_seconds()/60:.0f} minutes"
+                ))
+                return False
+            
+            # Check 2: Any result less than 45 minutes after kickoff is very suspicious
+            if time_since_start.total_seconds() < 45 * 60:  # Less than 45 minutes
+                self.stdout.write(self.style.WARNING(
+                    f"  ⚠ Suspicious FT status: Match marked as finished after only {time_since_start.total_seconds()/60:.0f} minutes"
+                ))
+                return False
+        
+        # If all checks pass, consider it genuinely finished
+        return True
 
     def _evaluate_prediction(self, match):
         """Evaluate if the prediction was correct"""

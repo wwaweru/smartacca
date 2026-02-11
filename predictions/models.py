@@ -37,6 +37,13 @@ class Match(models.Model):
     post_mortem_generated = models.BooleanField(default=False)
     post_mortem_generated_at = models.DateTimeField(null=True, blank=True)
 
+    # Uncertainty and Variance Analysis
+    calibrated_probability = models.FloatField(null=True, blank=True)  # Calibrated confidence probability
+    uncertainty_category = models.CharField(max_length=20, blank=True, null=True)  # Predictable, Uncertain, Coin Flip, Upset Prone
+    uncertainty_score = models.FloatField(null=True, blank=True)  # 0-1 scale uncertainty
+    data_quality_score = models.FloatField(null=True, blank=True)  # 0-1 scale data completeness
+    key_uncertainty_factors = models.TextField(blank=True, null=True)  # JSON list of uncertainty factors
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

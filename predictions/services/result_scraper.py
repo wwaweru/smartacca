@@ -50,16 +50,44 @@ class ResultScraper:
     def _try_espn(self, home_team, away_team, match_date, league_name):
         """Scrape ESPN for match result (best for static HTML)"""
         try:
-            # ESPN league slugs
+            # ESPN league slugs (expanded coverage)
             league_slugs = {
-                'Championship': 'eng.2',
+                # English leagues
                 'Premier League': 'eng.1',
+                'Championship': 'eng.2',
                 'League One': 'eng.3',
                 'League Two': 'eng.4',
+                
+                # Spanish leagues
                 'La Liga': 'esp.1',
+                'La Liga 2': 'esp.2',
+                
+                # Italian leagues
                 'Serie A': 'ita.1',
+                'Serie B': 'ita.2',
+                
+                # German leagues
                 'Bundesliga': 'ger.1',
+                'Bundesliga 2': 'ger.2',
+                
+                # French leagues
                 'Ligue 1': 'fra.1',
+                'Ligue 2': 'fra.2',
+                
+                # Dutch league
+                'Eredivisie': 'ned.1',
+                
+                # Portuguese league
+                'Primeira Liga': 'por.1',
+                
+                # Scottish league
+                'Scottish Premiership': 'sco.1',
+                
+                # Belgian league
+                'Belgian Pro League': 'bel.1',
+                
+                # Austrian Bundesliga (if ESPN covers it)
+                'Austrian Bundesliga': 'aut.1',
             }
 
             league_slug = league_slugs.get(league_name, 'eng.2')  # Default to Championship

@@ -66,10 +66,6 @@
                    class="text-sm font-medium transition-colors hover:text-primary {% if request.path == '/' %}text-primary{% else %}text-muted-foreground{% endif %}">
                     Dashboard
                 </a>
-                <a href="{% url 'predictions:post_mortem' %}"
-                   class="text-sm font-medium transition-colors hover:text-primary {% if 'post-mortem' in request.path %}text-primary{% else %}text-muted-foreground{% endif %}">
-                    Post-Mortem
-                </a>
                 <a href="/admin/"
                    class="text-sm font-medium transition-colors hover:text-primary text-muted-foreground">
                     Admin
@@ -102,11 +98,6 @@
                    class="text-lg font-medium transition-colors hover:text-primary {% if request.path == '/' %}text-primary{% else %}text-muted-foreground{% endif %}"
                    @click="$dispatch('toggle-mobile-menu')">
                     Dashboard
-                </a>
-                <a href="{% url 'predictions:post_mortem' %}"
-                   class="text-lg font-medium transition-colors hover:text-primary {% if 'post-mortem' in request.path %}text-primary{% else %}text-muted-foreground{% endif %}"
-                   @click="$dispatch('toggle-mobile-menu')">
-                    Post-Mortem
                 </a>
                 <a href="/admin/"
                    class="text-lg font-medium transition-colors hover:text-primary text-muted-foreground"
